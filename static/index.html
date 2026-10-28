@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinPilot: say it, and it's in your ledger</title>
+<style>
+  :root {
+    --bg: #f2f5f4; --surface: #ffffff; --ink: #12232b; --muted: #5c6e75; --line: #d6dfdd;
+    --accent: #0d6b5f; --accent-ink: #ffffff; --warn: #9a5b00; --warn-bg: #fff4de;
+    --err: #a61b1b; --err-bg: #fde8e8; --ok: #14633a; --ok-bg: #e2f5e9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1a1f; --surface: #15262d; --ink: #e8f0ee; --muted: #93a8ae; --line: #2a3f47;
+      --accent: #3cc2ad; --accent-ink: #062520; --warn: #f0b95a; --warn-bg: #33270f;
+      --err: #ff9a9a; --err-bg: #3a1717; --ok: #7fe0a6; --ok-bg: #12301f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5;
+         font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 20px 64px; }
+  header h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  header p { margin: 0; color: var(--muted); max-width: 60ch; }
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+            padding: 20px; margin-top: 20px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  textarea, input, select { width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+            border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+  textarea { resize: vertical; min-height: 84px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button { font: inherit; cursor: pointer; border-radius: 6px; padding: 10px 16px; border: 1px solid var(--line);
+           background: var(--surface); color: var(--ink); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .row .grow { flex: 1; }
+  .examples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .examples button { font-size: .85rem; padding: 4px 10px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: .8rem; font-weight: 600; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.bad { background: var(--err-bg); color: var(--err); }
+  .msg { border-radius: 6px; padding: 10px 12px; margin-top: 12px; font-size: .92rem; }
+  .msg.err { background: var(--err-bg); color: var(--err); }
+  .msg.warn { background: var(--warn-bg); color: var(--warn); }
+  .msg.ok { background: var(--ok-bg); color: var(--ok); }
+  .msg ul { margin: 0; padding-left: 18px; }
+  .hidden { display: none; }
+  .preview-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: baseline; }
+  .summary .total { font-size: 1.6rem; font-weight: 700; margin-right: 12px; font-variant-numeric: tabular-nums; }
+  .chip { background: var(--bg); border: 1px solid var(--line); border-radius: 99px; padding: 2px 10px; font-size: .85rem; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td.amt { font-variant-numeric: tabular-nums; text-align: right; }
+  th.amt { text-align: right; }
+  tr.fresh td { background: var(--ok-bg); }
+  td button { padding: 3px 9px; font-size: .82rem; }
+  .empty { color: var(--muted); padding: 16px 0; }
+  @media (prefers-reduced-motion: no-preference) { tr.fresh td { transition: background 2s; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>FinPilot</h1>
+    <p>Type or say an expense in plain words. AI turns it into a structured transaction, you check it, and it goes into your ledger.</p>
+  </header>
+
+  <!-- 1. INPUT -->
+  <section aria-labelledby="h-input">
+    <h2 id="h-input">1. Describe an expense</h2>
+    <label for="text">What did you spend?</label>
+    <textarea id="text" maxlength="500" placeholder="Example: Spent 450 rupees on pizza at Dominos yesterday using UPI"></textarea>
+    <div class="examples" aria-label="Example inputs">
+      <button type="button" data-ex="Paid 250 for auto to college today by cash">Auto fare</button>
+      <button type="button" data-ex="Spent 1299 on a t-shirt at Myntra on 2026-10-25 by card">T-shirt</button>
+      <button type="button" data-ex="Bought coffee">Missing amount</button>
+      <button type="button" data-ex="asdfgh">Invalid text</button>
+    </div>
+    <div class="row">
+      <button id="btn-extract" class="primary" type="button">Extract expense</button>
+      <button id="btn-mic" type="button" aria-pressed="false">Speak</button>
+      <span id="mic-note" class="grow" style="color:var(--muted);font-size:.85rem"></span>
+    </div>
+    <div id="input-msg" role="alert"></div>
+  </section>
+
+  <!-- 2. PREVIEW / CONFIRM -->
+  <section id="preview" class="hidden" aria-labelledby="h-preview">
+    <div class="preview-head">
+      <h2 id="h-preview">2. Check and confirm</h2>
+      <span id="status-badge" class="badge"></span>
+    </div>
+    <p style="color:var(--muted);margin:0 0 12px;font-size:.9rem">Nothing is saved until you press the save button. You can edit any field.</p>
+    <div class="grid">
+      <div><label for="f-amount">Amount</label><input id="f-amount" type="number" step="0.01" min="0"></div>
+      <div><label for="f-currency">Currency</label><input id="f-currency" maxlength="3"></div>
+      <div><label for="f-category">Category</label><select id="f-category"></select></div>
+      <div><label for="f-merchant">Merchant</label><input id="f-merchant" maxlength="120"></div>
+      <div><label for="f-date">Date</label><input id="f-date" type="date"></div>
+      <div><label for="f-pm">Payment method</label><select id="f-pm"></select></div>
+    </div>
+    <div id="val-msg"></div>
+    <div id="confidence" style="color:var(--muted);font-size:.85rem;margin-top:10px"></div>
+    <div class="row">
+      <button id="btn-save" class="primary" type="button" disabled>Confirm and save</button>
+      <button id="btn-cancel" type="button">Discard</button>
+    </div>
+    <div id="save-msg" role="status"></div>
+  </section>
+
+  <!-- 3. LEDGER -->
+  <section aria-labelledby="h-ledger">
+    <h2 id="h-ledger">Ledger</h2>
+    <div id="summary" class="summary"></div>
+    <div id="ledger-msg" role="alert"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Payment</th><th class="amt">Amount</th><th></th></tr></thead>
+        <tbody id="ledger-body"></tbody>
+      </table>
+    </div>
+    <div id="ledger-empty" class="empty hidden">No transactions yet. Add your first expense above.</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { rawInput: "", editingId: null, freshId: null, valTimer: null };
+
+/* ---------- helpers (all dynamic text uses textContent, never innerHTML) ---------- */
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  Object.assign(e, props);
+  kids.forEach((k) => e.append(k));
+  return e;
+}
+async function api(path, options = {}) {
+  let res;
+  try {
+    res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
+  } catch {
+    throw new Error("Cannot reach the server. Check your internet connection and try again.");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    let d = data.detail;
+    if (Array.isArray(d)) d = d.map((x) => x.msg).join(" ");
+    throw new Error(d || `Request failed (${res.status}).`);
+  }
+  return data;
+}
+function showMsg(target, kind, text) {
+  target.replaceChildren();
+  if (!text) return;
+  const items = Array.isArray(text) ? text : [text];
+  const box = el("div", { className: "msg " + kind });
+  if (items.length > 1) box.append(el("ul", {}, ...items.map((t) => el("li", { textContent: t }))));
+  else box.textContent = items[0];
+  target.append(box);
+}
+const money = (n, cur) => {
+  try { return new Intl.NumberFormat("en-IN", { style: "currency", currency: cur || "INR" }).format(n); }
+  catch { return `${cur} ${n}`; }
+};
+
+/* ---------- config ---------- */
+async function loadConfig() {
+  const cfg = await api("/api/config");
+  const fill = (sel, items) => sel.replaceChildren(...items.map((v) => el("option", { value: v, textContent: v })));
+  fill($("f-category"), cfg.categories);
+  fill($("f-pm"), cfg.payment_methods);
+}
+
+/* ---------- preview form ---------- */
+function readForm() {
+  const amt = $("f-amount").value;
+  return {
+    amount: amt === "" ? null : Number(amt),
+    currency: $("f-currency").value || "INR",
+    category: $("f-category").value,
+    merchant: $("f-merchant").value.trim() || null,
+    date: $("f-date").value || null,
+    payment_method: $("f-pm").value,
+  };
+}
+function fillForm(d) {
+  $("f-amount").value = d.amount ?? "";
+  $("f-currency").value = d.currency || "INR";
+  $("f-category").value = d.category || "Other";
+  $("f-merchant").value = d.merchant || "";
+  $("f-date").value = d.date || "";
+  $("f-pm").value = d.payment_method || "Other";
+}
+function showValidation(v) {
+  const badge = $("status-badge");
+  badge.className = "badge " + (v.valid ? "ok" : "bad");
+  badge.textContent = v.valid ? "Valid, ready to save" : "Needs fixing";
+  const box = $("val-msg");
+  box.replaceChildren();
+  if (v.errors.length) box.append(...[el("div", { className: "msg err" }, el("ul", {}, ...v.errors.map((t) => el("li", { textContent: t }))))]);
+  if (v.warnings.length) box.append(el("div", { className: "msg warn" }, el("ul", {}, ...v.warnings.map((t) => el("li", { textContent: t })))));
+  $("btn-save").disabled = !v.valid;
+}
+async function revalidate() {
+  try {
+    const v = await api("/api/validate", { method: "POST", body: JSON.stringify(readForm()) });
+    showValidation(v);
+  } catch (e) { showMsg($("save-msg"), "err", e.message); }
+}
+["f-amount", "f-currency", "f-category", "f-merchant", "f-date", "f-pm"].forEach((id) =>
+  $(id).addEventListener("input", () => { clearTimeout(state.valTimer); state.valTimer = setTimeout(revalidate, 300); })
+);
+function openPreview(title) {
+  $("preview").classList.remove("hidden");
+  $("h-preview").textContent = title;
+  $("btn-save").textContent = state.editingId ? "Confirm and update" : "Confirm and save";
+  showMsg($("save-msg"), "", "");
+  $("preview").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function closePreview() {
+  $("preview").classList.add("hidden");
+  state.editingId = null;
+}
+
+/* ---------- actions ---------- */
+$("btn-extract").addEventListener("click", async () => {
+  const text = $("text").value.trim();
+  showMsg($("input-msg"), "", "");
+  if (text.length < 3) return showMsg($("input-msg"), "err", "Type or say an expense first, for example 'Paid 250 for auto by cash today'.");
+  const btn = $("btn-extract");
+  btn.disabled = true; btn.textContent = "Extracting...";
+  try {
+    const r = await api("/api/extract", { method: "POST", body: JSON.stringify({ text }) });
+    state.rawInput = text; state.editingId = null;
+    fillForm(r.draft); showValidation(r);
+    $("confidence").textContent = r.confidence != null ? `AI confidence: ${Math.round(r.confidence * 100)}%` : "";
+    openPreview("2. Check and confirm");
+  } catch (e) {
+    closePreview();
+    showMsg($("input-msg"), "err", e.message);
+  } finally { btn.disabled = false; btn.textContent = "Extract expense"; }
+});
+
+$("btn-save").addEventListener("click", async () => {
+  const btn = $("btn-save");
+  btn.disabled = true;
+  try {
+    const body = JSON.stringify({ ...readForm(), raw_input: state.rawInput || null });
+    const editing = state.editingId;
+    const saved = await api(editing ? `/api/transactions/${editing}` : "/api/transactions", { method: editing ? "PUT" : "POST", body });
+    state.freshId = saved.id;
+    showMsg($("input-msg"), "ok", `${editing ? "Updated" : "Saved"}: ${money(saved.amount, saved.currency)} at ${saved.merchant || "unknown merchant"} on ${saved.date} (record #${saved.id}).`);
+    closePreview(); $("text").value = ""; state.rawInput = "";
+    await refresh();
+  } catch (e) {
+    showMsg($("save-msg"), "err", e.message);
+    btn.disabled = false;
+  }
+});
+$("btn-cancel").addEventListener("click", closePreview);
+document.querySelectorAll("[data-ex]").forEach((b) => b.addEventListener("click", () => { $("text").value = b.dataset.ex; $("text").focus(); }));
+
+/* ---------- ledger ---------- */
+async function refresh() {
+  try {
+    const [rows, sum] = await Promise.all([api("/api/transactions"), api("/api/summary")]);
+    showMsg($("ledger-msg"), "", "");
+    const s = $("summary");
+    s.replaceChildren(el("span", { className: "total", textContent: money(sum.total, "INR") }), el("span", { textContent: "this month" }),
+      ...Object.entries(sum.by_category).map(([c, t]) => el("span", { className: "chip", textContent: `${c}: ${money(t, "INR")}` })));
+    const body = $("ledger-body");
+    body.replaceChildren(...rows.map((r) => {
+      const tr = el("tr", { className: r.id === state.freshId ? "fresh" : "" });
+      tr.append(el("td", { textContent: r.date }), el("td", { textContent: r.merchant || "-" }), el("td", { textContent: r.category }),
+        el("td", { textContent: r.payment_method }), el("td", { className: "amt", textContent: money(r.amount, r.currency) }));
+      const edit = el("button", { type: "button", textContent: "Edit" });
+      edit.addEventListener("click", () => {
+        state.editingId = r.id; state.rawInput = r.raw_input || "";
+        fillForm(r); revalidate(); $("confidence").textContent = "";
+        openPreview(`Edit record #${r.id}`);
+      });
+      const del = el("button", { type: "button", textContent: "Delete" });
+      del.addEventListener("click", async () => {
+        if (!confirm("Delete this transaction?")) return;
+        try { await api(`/api/transactions/${r.id}`, { method: "DELETE" }); await refresh(); }
+        catch (e) { showMsg($("ledger-msg"), "err", e.message); }
+      });
+      tr.append(el("td", {}, edit, " ", del));
+      return tr;
+    }));
+    $("ledger-empty").classList.toggle("hidden", rows.length > 0);
+  } catch (e) { showMsg($("ledger-msg"), "err", "Could not load the ledger. " + e.message); }
+}
+
+/* ---------- voice input (browser Web Speech API; optional bonus) ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn = $("btn-mic");
+if (!SR) {
+  micBtn.disabled = true;
+  $("mic-note").textContent = "Voice input is not supported in this browser. Use Chrome or Edge, or type instead.";
+} else {
+  let rec = null;
+  micBtn.addEventListener("click", () => {
+    if (rec) { rec.stop(); return; }
+    rec = new SR(); rec.lang = "en-IN"; rec.interimResults = false;
+    rec.onstart = () => { micBtn.textContent = "Stop"; micBtn.setAttribute("aria-pressed", "true"); $("mic-note").textContent = "Listening..."; };
+    rec.onresult = (ev) => { $("text").value = Array.from(ev.results).map((r) => r[0].transcript).join(" "); };
+    rec.onerror = (ev) => { $("mic-note").textContent = ev.error === "not-allowed" ? "Microphone access was blocked. Allow it in the browser settings." : "Voice input failed. Try again or type instead."; };
+    rec.onend = () => { rec = null; micBtn.textContent = "Speak"; micBtn.setAttribute("aria-pressed", "false"); if ($("mic-note").textContent === "Listening...") $("mic-note").textContent = "Check the text, then press Extract."; };
+    rec.start();
+  });
+}
+
+loadConfig().then(refresh).catch((e) => showMsg($("ledger-msg"), "err", e.message));
+</script>
+</body>
+</html>
